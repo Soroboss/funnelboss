@@ -31,6 +31,24 @@ yarn-error.log*
 # vercel
 .vercel
 
+# insforge — links dir to project, contains admin api_key, NEVER commit
+.insforge/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# InsForge & AI agent skills
+.insforge
+.agent
+.agents
+.augment
+.claude
+.cline
+.github/copilot*
+.kilocode
+.qoder
+.qwen
+.roo
+.trae
+.windsurf
