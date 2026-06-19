@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting } from "@/lib/settings";
 import { stopRunsByWhatsapp } from "@/lib/funnel";
+import { rateLimit, clientIp } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,6 +13,10 @@ export const runtime = "nodejs";
 const STOP_WORDS = new Set(["STOP", "STOP.", "DÉSABO", "DESABO", "DESABONNER", "UNSUBSCRIBE"]);
 
 export async function POST(req: NextRequest) {
+  if (!(await rateLimit(`wasender:${clientIp(req.headers)}`, 60, 60))) {
+    return NextResponse.json({ ok: false, error: "rate limited" }, { status: 429 });
+  }
+
   const secret = await getSetting("wasender_webhook_secret");
   const sig = req.headers.get("x-webhook-signature");
   if (!secret || sig !== secret) {

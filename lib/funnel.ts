@@ -23,7 +23,7 @@ function pruned(key: Record<string, unknown>, fields: Record<string, unknown>): 
 export type Step = { channel: "whatsapp" | "email"; delay_hours: number; template_key: string };
 type Sequence = { id: string; name: string; trigger: string; steps: Step[]; is_active: boolean };
 type Customer = { id: string; chariow_id: string; email: string | null; whatsapp: string | null; full_name: string | null };
-type Run = { id: string; customer_id: string; sequence_id: string; current_step: number; status: string; next_due_at: string | null };
+type Run = { id: string; customer_id: string; sequence_id: string; current_step: number; status: string; next_due_at: string | null; attempts: number };
 
 // ── Mappings Chariow → tables ────────────────────────────────────────
 
@@ -265,14 +265,17 @@ export async function stopRunsByWhatsapp(rawNumber: string): Promise<number> {
  * Traite les runs "pending" échus : envoie l'étape courante (mock), respecte le
  * plafond anti-spam, avance l'étape, recalcule next_due_at. Retourne un résumé.
  */
-export async function processDueSequences(): Promise<{ processed: number; sent: number; deferred: number; finished: number }> {
+const MAX_ATTEMPTS = 3;
+const BACKOFF_MINUTES = [5, 30]; // après échec 1 → 5 min, après échec 2 → 30 min
+
+export async function processDueSequences(): Promise<{ processed: number; sent: number; deferred: number; finished: number; retried: number; failed: number }> {
   const now = new Date().toISOString();
   const runs = await dbSelect<Run>(
     "sequence_runs",
     `status=eq.pending&next_due_at=lte.${now}&order=next_due_at.asc&limit=200`,
   );
 
-  let sent = 0, deferred = 0, finished = 0;
+  let sent = 0, deferred = 0, finished = 0, retried = 0, failed = 0;
 
   for (const run of runs) {
     const seqRows = await dbSelect<Sequence>("sequences", `id=eq.${run.sequence_id}&limit=1`);
@@ -297,27 +300,43 @@ export async function processDueSequences(): Promise<{ processed: number; sent: 
     const custRows = await dbSelect<Customer>("customers", `id=eq.${run.customer_id}&limit=1`);
     const customer = custRows[0];
 
-    // Envoi réel (WhatsApp/email) + log. On avance l'étape quoi qu'il arrive
-    // (le retry sur échec est du ressort de la Phase 6).
+    // Envoi réel (WhatsApp/email) + log.
     const outcome = customer ? await dispatchStep(run, step, customer) : "skipped";
     if (outcome === "sent") sent++;
 
-    // Avance l'étape.
+    // Retry + backoff sur échec (max 3 tentatives, puis on abandonne l'étape).
+    if (outcome === "failed") {
+      const attempts = (run.attempts ?? 0) + 1;
+      if (attempts < MAX_ATTEMPTS) {
+        const backoffMin = BACKOFF_MINUTES[attempts - 1] ?? 120;
+        await dbPatch("sequence_runs", `id=eq.${run.id}`, {
+          attempts,
+          next_due_at: new Date(Date.now() + backoffMin * 60_000).toISOString(),
+        });
+        retried++;
+        continue; // même étape, on réessaiera plus tard
+      }
+      failed++; // tentatives épuisées → "failed" déjà loggé, on avance
+    }
+
+    // Avance l'étape (succès / skip / échec définitif) + reset des tentatives.
     const nextStep = run.current_step + 1;
     if (nextStep < steps.length) {
       await dbPatch("sequence_runs", `id=eq.${run.id}`, {
         current_step: nextStep,
         next_due_at: dueAtFromNow(steps[nextStep].delay_hours ?? 0),
+        attempts: 0,
       });
     } else {
       await dbPatch("sequence_runs", `id=eq.${run.id}`, {
         current_step: nextStep,
         status: "sent",
         next_due_at: null,
+        attempts: 0,
       });
       finished++;
     }
   }
 
-  return { processed: runs.length, sent, deferred, finished };
+  return { processed: runs.length, sent, deferred, finished, retried, failed };
 }

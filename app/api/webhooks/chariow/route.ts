@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
+import { rateLimit, clientIp } from "@/lib/ratelimit";
 import {
   upsertCustomer,
   upsertSale,
@@ -16,6 +17,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  // 0. Rate-limit anti-abus (60 req / 60 s / IP).
+  if (!(await rateLimit(`chariow:${clientIp(req.headers)}`, 60, 60))) {
+    return NextResponse.json({ ok: false, error: "rate limited" }, { status: 429 });
+  }
+
   // 1. Token (à défaut de signature côté Chariow).
   if (req.nextUrl.searchParams.get("token") !== env.chariowWebhookSecret()) {
     return NextResponse.json({ ok: false, error: "invalid token" }, { status: 401 });
