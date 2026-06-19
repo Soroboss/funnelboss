@@ -24,6 +24,8 @@ const WHATSAPP: Partial<Record<string, WhatsAppTpl>> = {
     `${v.prenom}, dernier rappel ⏳\nVotre accès à ${v.produit} part bientôt. On finalise maintenant ?\n👉 ${v.lien_checkout}\n\nCode promo : ${v.code_promo}`,
   merci_achat: (v) =>
     `Merci ${v.prenom} 🙏\nVotre commande "${v.produit}" est confirmée. Bienvenue chez Bigréussite !\nVous recevez tout par email. Besoin d'aide ? Écrivez-moi ici.`,
+  reactivation_whatsapp: (v) =>
+    `Bonjour ${v.prenom} 👋\nÇa fait un moment ! On a du nouveau chez Bigréussite qui devrait vous plaire.\n👉 ${v.lien_checkout}\n\nCode promo retour : ${v.code_promo}`,
 };
 
 const EMAIL: Partial<Record<string, EmailTpl>> = {
@@ -42,6 +44,15 @@ const EMAIL: Partial<Record<string, EmailTpl>> = {
       `<p>Bonjour ${v.prenom},</p>
        <p>Merci encore pour votre confiance sur <b>${v.produit}</b>. Pour aller plus loin, on a sélectionné la suite idéale pour vous.</p>
        <p><a href="${v.lien_checkout}" style="background:#f0930f;color:#0a0a0a;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Découvrir</a></p>`,
+    ),
+  }),
+  reactivation_email: (v) => ({
+    subject: `${v.prenom}, on a pensé à vous (code ${v.code_promo})`,
+    html: emailWrap(
+      `<p>Bonjour ${v.prenom},</p>
+       <p>Ça fait un moment qu'on ne vous a pas vu chez <b>Bigréussite</b>. On a du nouveau qui pourrait vous intéresser.</p>
+       <p>Pour votre retour, profitez du code <b>${v.code_promo}</b>.</p>
+       <p><a href="${v.lien_checkout}" style="background:#f0930f;color:#0a0a0a;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">J'en profite</a></p>`,
     ),
   }),
 };
