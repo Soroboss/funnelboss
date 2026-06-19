@@ -1,4 +1,4 @@
-# Chariow Funnel Engine — Setup
+# FunnelBoss — Setup
 
 Tunnel de vente + relance automatisée pour la boutique Chariow (bigreussite).
 

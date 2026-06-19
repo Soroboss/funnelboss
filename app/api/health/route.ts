@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    service: "chariow-funnel-engine",
+    service: "funnelboss",
     timestamp: new Date().toISOString(),
   });
 }

@@ -83,7 +83,7 @@ export default async function (req: Request): Promise<Response> {
     // ── 2. Sérialiser le dump ───────────────────────────────────────
     const exportedAt = new Date().toISOString();
     const payload = {
-      project: "chariow-funnel-engine",
+      project: "funnelboss",
       exported_at: exportedAt,
       tables,
     };
