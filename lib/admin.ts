@@ -151,3 +151,89 @@ export async function reactivateSegment(segment: Segment): Promise<{ matched: nu
   }
   return { matched: matches.length, enqueued };
 }
+
+/** Séries pour les graphiques : CA attribué / semaine (8 sem.) + envois par canal. */
+export async function getOverviewSeries() {
+  const [sales, runs, logs] = await Promise.all([
+    dbSelect<Sale & { occurred_at: string | null }>("sales", "status=eq.successful&limit=5000"),
+    dbSelect<Run>("sequence_runs", "limit=5000"),
+    dbSelect<{ channel: string; provider_status: string }>(
+      "message_logs",
+      "select=channel,provider_status&limit=5000",
+    ),
+  ]);
+  const conv = new Set(runs.filter((r) => r.status === "converted").map((r) => r.customer_id));
+
+  const WEEKS = 8;
+  const weekStart = (d: Date) => {
+    const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const day = (x.getUTCDay() + 6) % 7; // lundi = 0
+    x.setUTCDate(x.getUTCDate() - day);
+    return x;
+  };
+  const thisWeek = weekStart(new Date());
+  const buckets: { label: string; start: number; ca: number }[] = [];
+  for (let i = WEEKS - 1; i >= 0; i--) {
+    const s = new Date(thisWeek);
+    s.setUTCDate(s.getUTCDate() - i * 7);
+    buckets.push({ label: `${s.getUTCDate()}/${s.getUTCMonth() + 1}`, start: s.getTime(), ca: 0 });
+  }
+  for (const sale of sales) {
+    if (!sale.customer_id || !conv.has(sale.customer_id) || !sale.occurred_at) continue;
+    const t = new Date(sale.occurred_at).getTime();
+    for (let i = buckets.length - 1; i >= 0; i--) {
+      if (t >= buckets[i].start) {
+        buckets[i].ca += Number(sale.amount ?? 0);
+        break;
+      }
+    }
+  }
+
+  const channels = { whatsapp: 0, email: 0 };
+  for (const l of logs) {
+    if (l.provider_status === "failed" || l.provider_status === "skipped_no_recipient") continue;
+    if (l.channel === "whatsapp") channels.whatsapp++;
+    else if (l.channel === "email") channels.email++;
+  }
+
+  return { weeks: buckets.map((b) => ({ label: b.label, ca: b.ca })), channels };
+}
+
+/** Fiche client détaillée : profil dérivé + ventes + runs + messages. */
+export async function getCustomerDetail(id: string) {
+  const [cust, sales, runs, seqs] = await Promise.all([
+    dbSelect<Customer>("customers", `id=eq.${id}&limit=1`),
+    dbSelect<Sale & { chariow_sale_id: string; status: string; product_ref: string | null }>(
+      "sales",
+      `customer_id=eq.${id}&order=occurred_at.desc.nullslast&limit=50`,
+    ),
+    dbSelect<Run & { sequence_id: string; created_at: string }>(
+      "sequence_runs",
+      `customer_id=eq.${id}&order=created_at.desc&limit=50`,
+    ),
+    dbSelect<Sequence>("sequences", "limit=100"),
+  ]);
+  const customer = cust[0];
+  if (!customer) return null;
+
+  const stats = statsByCustomer(sales as Sale[]).get(id);
+  const runIds = runs.map((r) => r.id);
+  const messages = runIds.length
+    ? await dbSelect(
+        "message_logs",
+        `sequence_run_id=in.(${runIds.join(",")})&order=sent_at.desc&limit=50`,
+      )
+    : [];
+
+  return {
+    customer: {
+      ...customer,
+      total_spent: stats?.total ?? 0,
+      purchases: stats?.count ?? 0,
+      segments: segmentsOf(stats),
+    },
+    sales,
+    runs: runs.map((r) => ({ ...r, sequence: seqs.find((s) => s.id === r.sequence_id)?.name ?? "—" })),
+    messages,
+  };
+}
