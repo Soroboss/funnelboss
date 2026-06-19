@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
         amount: payload?.sale?.amount?.value ?? null,
         status: "successful",
         occurred_at: payload?.sale?.completed_at ?? payload?.sale?.created_at ?? null,
+        checkout_url: payload?.checkout?.url ?? null,
       });
       // Conversion : on stoppe net les relances d'abandon en cours.
       await stopAbandonRunsForCustomer(customer.id);
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
         amount: payload?.sale?.amount?.value ?? null,
         status: "abandoned",
         occurred_at: payload?.sale?.abandoned_at ?? payload?.sale?.created_at ?? null,
+        checkout_url: payload?.checkout?.url ?? null,
       });
       // Relance seulement si on a un contact.
       if (customer) await enqueueByTrigger(customer.id, "abandoned_sale");

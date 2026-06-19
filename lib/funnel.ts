@@ -1,8 +1,14 @@
 // Logique métier FunnelBoss : mapping Chariow → Insforge, upserts idempotents,
-// mise en file des séquences, règles d'arrêt, et moteur (sendMessage MOCK en
-// Phase 3 — les envois réels Wasender/Brevo arrivent en Phase 4).
+// mise en file des séquences, règles d'arrêt, et moteur (envois RÉELS Wasender/
+// Brevo en Phase 4b, via templates ; clés lues depuis le module Connexions).
 
 import { dbSelect, dbUpsert, dbInsert, dbPatch } from "./insforge";
+import { sendWhatsApp } from "./wasender";
+import { sendEmail } from "./brevo";
+import { renderTemplate, type TemplateVars } from "./templates";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const randInt = (a: number, b: number) => a + Math.floor(Math.random() * (b - a));
 
 /** Construit une ligne d'upsert sans les champs nullish (sauf la clé), pour ne
  *  PAS écraser une valeur existante avec null lors d'un merge-duplicates. */
@@ -70,8 +76,16 @@ export async function upsertSale(args: {
   amount: number | null;
   status: "successful" | "abandoned";
   occurred_at: string | null;
+  checkout_url?: string | null;
 }): Promise<void> {
-  await dbUpsert("sales", [args], "chariow_sale_id");
+  await dbUpsert("sales", [pruned({ chariow_sale_id: args.chariow_sale_id }, {
+    customer_id: args.customer_id,
+    product_ref: args.product_ref,
+    amount: args.amount,
+    status: args.status,
+    occurred_at: args.occurred_at,
+    checkout_url: args.checkout_url,
+  })], "chariow_sale_id");
 }
 
 // ── Séquences : lookup, enqueue, stop ────────────────────────────────
@@ -146,19 +160,21 @@ async function messagedToday(customerId: string): Promise<boolean> {
   );
   if (runs.length === 0) return false;
   const ids = runs.map((r) => r.id).join(",");
+  // Ne compte que les envois réellement partis (pas les échecs/skips).
   const msgs = await dbSelect(
     "message_logs",
-    `sequence_run_id=in.(${ids})&sent_at=gte.${utcMidnightISO()}&limit=1`,
+    `sequence_run_id=in.(${ids})&sent_at=gte.${utcMidnightISO()}&provider_status=not.in.(failed,skipped_no_recipient)&limit=1`,
   );
   return msgs.length > 0;
 }
 
-/** MOCK Phase 3 : log l'envoi dans message_logs (pas d'appel provider réel). */
-async function sendMessageMock(
+async function logMessage(
   run: Run,
   step: Step,
   recipient: string,
-  status = "mock_sent",
+  status: string,
+  providerMessageId: string | null,
+  raw: unknown,
 ): Promise<void> {
   await dbInsert("message_logs", [{
     sequence_run_id: run.id,
@@ -166,9 +182,83 @@ async function sendMessageMock(
     recipient,
     template_key: step.template_key,
     provider_status: status,
-    provider_message_id: `mock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    raw_response: { mock: true },
+    provider_message_id: providerMessageId,
+    raw_response: raw ?? null,
   }]);
+}
+
+/** Variables de template pour un client (prénom, produit, lien checkout, promo). */
+async function buildContext(customer: Customer): Promise<TemplateVars> {
+  const prenom = (customer.full_name ?? "").trim().split(/\s+/)[0] || "👋";
+
+  // Dernière vente du client → produit + lien de reprise du checkout.
+  const sales = await dbSelect<{ product_ref: string | null; checkout_url: string | null }>(
+    "sales",
+    `customer_id=eq.${customer.id}&order=occurred_at.desc.nullslast&limit=1`,
+  );
+  const sale = sales[0];
+
+  let produit = "votre commande";
+  if (sale?.product_ref) {
+    const prods = await dbSelect<{ name: string }>(
+      "products",
+      `chariow_product_id=eq.${sale.product_ref}&select=name&limit=1`,
+    );
+    if (prods[0]?.name) produit = prods[0].name;
+  }
+
+  return {
+    prenom,
+    produit,
+    lien_checkout: sale?.checkout_url ?? "https://bigreussite.com",
+    code_promo: "BIGREUSSITE",
+  };
+}
+
+/** Envoie réellement l'étape (WhatsApp ou email), log le résultat. */
+async function dispatchStep(run: Run, step: Step, customer: Customer): Promise<"sent" | "failed" | "skipped"> {
+  const recipient = step.channel === "email" ? customer.email : customer.whatsapp;
+  if (!recipient) {
+    await logMessage(run, step, "", "skipped_no_recipient", null, null);
+    return "skipped";
+  }
+
+  const vars = await buildContext(customer);
+  const rendered = renderTemplate(step.template_key, step.channel, vars);
+  if (!rendered) {
+    await logMessage(run, step, recipient, "failed", null, { error: "template introuvable" });
+    return "failed";
+  }
+
+  if (step.channel === "whatsapp") {
+    await sleep(randInt(2000, 6000)); // délai aléatoire anti-ban
+    const r = await sendWhatsApp(recipient, (rendered as { text: string }).text);
+    await logMessage(run, step, recipient, r.ok ? (r.status ?? "sent") : "failed", r.msgId ?? null, r.raw);
+    return r.ok ? "sent" : "failed";
+  }
+
+  const { subject, html } = rendered as { subject: string; html: string };
+  const r = await sendEmail(recipient, subject, html);
+  await logMessage(run, step, recipient, r.ok ? "sent" : "failed", r.messageId ?? null, r.raw);
+  return r.ok ? "sent" : "failed";
+}
+
+/** Réception STOP : passe en "stopped" les runs pending du client (par numéro WhatsApp). */
+export async function stopRunsByWhatsapp(rawNumber: string): Promise<number> {
+  const digits = (rawNumber || "").replace(/\D/g, "");
+  if (digits.length < 6) return 0;
+  const last = digits.slice(-9); // partie significative (insensible au préfixe +225)
+  const customers = await dbSelect<{ id: string }>("customers", `whatsapp=ilike.*${last}*&select=id`);
+  let stopped = 0;
+  for (const c of customers) {
+    const res = await dbPatch(
+      "sequence_runs",
+      `customer_id=eq.${c.id}&status=eq.pending`,
+      { status: "stopped" },
+    );
+    stopped += Array.isArray(res) ? res.length : 0;
+  }
+  return stopped;
 }
 
 /**
@@ -206,15 +296,11 @@ export async function processDueSequences(): Promise<{ processed: number; sent: 
 
     const custRows = await dbSelect<Customer>("customers", `id=eq.${run.customer_id}&limit=1`);
     const customer = custRows[0];
-    const recipient = step.channel === "email" ? customer?.email : customer?.whatsapp;
 
-    if (recipient) {
-      await sendMessageMock(run, step, recipient);
-      sent++;
-    } else {
-      // Pas de coordonnée pour ce canal : on log et on avance quand même.
-      await sendMessageMock(run, step, "", "skipped_no_recipient");
-    }
+    // Envoi réel (WhatsApp/email) + log. On avance l'étape quoi qu'il arrive
+    // (le retry sur échec est du ressort de la Phase 6).
+    const outcome = customer ? await dispatchStep(run, step, customer) : "skipped";
+    if (outcome === "sent") sent++;
 
     // Avance l'étape.
     const nextStep = run.current_step + 1;

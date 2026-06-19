@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
         amount: s?.amount?.value ?? null,
         status,
         occurred_at: s?.completed_at ?? s?.abandoned_at ?? s?.created_at ?? null,
+        checkout_url: s?.checkout?.url ?? null,
       });
       salesUpserted++;
     }
