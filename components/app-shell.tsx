@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  LayoutDashboard, Users, Route, Rocket, MessageSquare, Plug, Menu, LogOut, CircleCheck,
+  LayoutDashboard, Users, Route, Rocket, MessageSquare, Plug, Menu, LogOut, CircleCheck, ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,10 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function LoginGate({ onAuthed }: { onAuthed: () => void }) {
+  const [mode, setMode] = useState<"login" | "reset">("login");
   const [pw, setPw] = useState("");
+  const [code, setCode] = useState("");
+  const [newPw, setNewPw] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -76,6 +79,16 @@ function LoginGate({ onAuthed }: { onAuthed: () => void }) {
     if (r.ok) onAuthed();
     else setErr((await r.json()).error ?? "Erreur");
   }
+  async function reset() {
+    setErr(""); setBusy(true);
+    const r = await fetch("/api/auth/reset", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recovery_code: code, new_password: newPw }),
+    });
+    setBusy(false);
+    if (r.ok) onAuthed();
+    else setErr((await r.json()).error ?? "Erreur");
+  }
 
   return (
     <div className="grid min-h-screen place-items-center bg-muted/30 p-6">
@@ -83,18 +96,30 @@ function LoginGate({ onAuthed }: { onAuthed: () => void }) {
         <CardHeader className="items-center gap-2">
           <Brand />
           <CardTitle className="pt-2 text-center text-base font-medium text-muted-foreground">
-            Connexion administrateur
+            {mode === "login" ? "Connexion administrateur" : "Réinitialiser le mot de passe"}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <Input
-            type="password" placeholder="Mot de passe" value={pw}
-            onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()}
-          />
-          {err && <p className="text-sm text-destructive">{err}</p>}
-          <Button onClick={login} disabled={busy} className="w-full">
-            {busy ? "…" : "Se connecter"}
-          </Button>
+          {mode === "login" ? (
+            <>
+              <Input type="password" placeholder="Mot de passe" value={pw}
+                onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} />
+              {err && <p className="text-sm text-destructive">{err}</p>}
+              <Button onClick={login} disabled={busy} className="w-full">{busy ? "…" : "Se connecter"}</Button>
+              <button type="button" onClick={() => { setMode("reset"); setErr(""); }}
+                className="text-xs text-muted-foreground underline hover:text-foreground">Mot de passe oublié ?</button>
+            </>
+          ) : (
+            <>
+              <Input placeholder="Code de récupération" value={code} onChange={(e) => setCode(e.target.value)} />
+              <Input type="password" placeholder="Nouveau mot de passe (min 8)" value={newPw}
+                onChange={(e) => setNewPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && reset()} />
+              {err && <p className="text-sm text-destructive">{err}</p>}
+              <Button onClick={reset} disabled={busy} className="w-full">{busy ? "…" : "Réinitialiser"}</Button>
+              <button type="button" onClick={() => { setMode("login"); setErr(""); }}
+                className="text-xs text-muted-foreground underline hover:text-foreground">← Retour à la connexion</button>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -143,6 +168,7 @@ function SetupGate({ onDone }: { onDone: () => void }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<{ hasAdmin: boolean; authed: boolean } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     fetch("/api/auth/status", { cache: "no-store" })
@@ -186,6 +212,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="mt-2"><NavLinks onNavigate={() => setMobileOpen(false)} /></div>
             </SheetContent>
           </Sheet>
+          <Button variant="ghost" size="sm" onClick={() => router.back()} className="gap-1.5 text-muted-foreground">
+            <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Retour</span>
+          </Button>
           <div className="flex-1" />
           <ThemeToggle />
           <Button variant="ghost" size="sm" onClick={logout} className="gap-2 text-muted-foreground">

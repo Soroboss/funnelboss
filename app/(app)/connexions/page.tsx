@@ -30,6 +30,10 @@ export default function ConnexionsPage() {
   const [tests, setTests] = useState<Record<string, { ok: boolean; detail: string; loading?: boolean }>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [curPw, setCurPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [secMsg, setSecMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function load() {
     const r = await fetch("/api/settings", { cache: "no-store" });
@@ -49,6 +53,22 @@ export default function ConnexionsPage() {
     const j = await r.json();
     setTests((t) => ({ ...t, [provider]: { ok: !!j.ok, detail: j.detail ?? "" } }));
   }
+  async function genRecovery() {
+    setRecoveryCode(""); setSecMsg(null);
+    const r = await fetch("/api/auth/recovery", { method: "POST" });
+    const j = await r.json();
+    if (j.ok) setRecoveryCode(j.code);
+    else setSecMsg({ ok: false, text: j.error ?? "Erreur" });
+  }
+  async function changePw() {
+    setSecMsg(null);
+    const r = await fetch("/api/auth/change-password", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ current: curPw, next: newPw }),
+    });
+    const j = await r.json();
+    if (j.ok) { setSecMsg({ ok: true, text: "Mot de passe modifié." }); setCurPw(""); setNewPw(""); }
+    else setSecMsg({ ok: false, text: j.error ?? "Erreur" });
+  }
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
@@ -56,6 +76,33 @@ export default function ConnexionsPage() {
         <h1 className="text-xl font-semibold tracking-tight">Connexions</h1>
         <p className="text-sm text-muted-foreground">Colle tes clés, enregistre, puis teste chaque intégration.</p>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Sécurité du compte</CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label className="text-xs">Code de récupération</Label>
+            <p className="text-xs text-muted-foreground">
+              Garde ce code en lieu sûr : il permet de réinitialiser ton mot de passe depuis l'écran de connexion si tu l'oublies (usage unique).
+            </p>
+            {recoveryCode && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-center font-mono text-sm tracking-wider">
+                {recoveryCode}
+              </div>
+            )}
+            <Button variant="outline" size="sm" className="self-start" onClick={genRecovery}>
+              {recoveryCode ? "Régénérer un code" : "Générer un code de récupération"}
+            </Button>
+          </div>
+          <div className="flex flex-col gap-2 border-t pt-4">
+            <Label className="text-xs">Changer le mot de passe</Label>
+            <Input type="password" placeholder="Mot de passe actuel" value={curPw} onChange={(e) => setCurPw(e.target.value)} />
+            <Input type="password" placeholder="Nouveau mot de passe (min 8)" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+            <Button variant="outline" size="sm" className="self-start" onClick={changePw}>Mettre à jour</Button>
+          </div>
+          {secMsg && <p className={`text-xs ${secMsg.ok ? "text-emerald-600" : "text-destructive"}`}>{secMsg.text}</p>}
+        </CardContent>
+      </Card>
 
       {PROVIDERS.map((p) => (
         <Card key={p.id}>
