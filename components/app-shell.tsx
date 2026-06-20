@@ -11,15 +11,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
-import { Badge } from "@/components/ui/badge";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const NAV = [
   { href: "/dashboard", label: "Vue d'ensemble", icon: LayoutDashboard },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/sequences", label: "Séquences", icon: Route },
   { href: "/campagnes", label: "Campagnes", icon: Rocket },
-  { href: "/messages", label: "Messages", icon: MessageSquare, soon: true },
+  { href: "/messages", label: "Messages", icon: MessageSquare },
   { href: "/connexions", label: "Connexions", icon: Plug },
 ];
 
@@ -52,12 +52,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           >
             <Icon className="h-4 w-4 shrink-0" />
             <span className="flex-1">{item.label}</span>
-            {item.soon && <Badge variant="secondary" className="text-[10px]">bientôt</Badge>}
           </span>
         );
-        return item.soon ? (
-          <div key={item.href} className="cursor-default opacity-70">{inner}</div>
-        ) : (
+        return (
           <Link key={item.href} href={item.href} onClick={onNavigate}>{inner}</Link>
         );
       })}
@@ -190,6 +187,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
           <div className="flex-1" />
+          <ThemeToggle />
           <Button variant="ghost" size="sm" onClick={logout} className="gap-2 text-muted-foreground">
             <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Déconnexion</span>
           </Button>

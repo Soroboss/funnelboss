@@ -194,6 +194,23 @@ export async function listCampaigns() {
   return dbSelect("campaigns", "order=created_at.desc&limit=100");
 }
 
+// ── Messages (journal de livraison) ──────────────────────────────────
+
+export async function listMessages(opts: { channel?: string; status?: string; q?: string }) {
+  const parts = ["order=sent_at.desc", "limit=300"];
+  if (opts.channel === "whatsapp" || opts.channel === "email") parts.push(`channel=eq.${opts.channel}`);
+  if (opts.q && opts.q.trim()) parts.push(`recipient=ilike.*${opts.q.trim()}*`);
+
+  const rows = await dbSelect<{ provider_status: string }>("message_logs", parts.join("&"));
+  const category = (s: string) =>
+    s === "failed" ? "failed" : s === "skipped_no_recipient" ? "skipped" : "sent";
+  let out = rows.map((r) => ({ ...r, category: category(r.provider_status) }));
+  if (opts.status && ["sent", "failed", "skipped"].includes(opts.status)) {
+    out = out.filter((r) => r.category === opts.status);
+  }
+  return out.slice(0, 200);
+}
+
 /** Séries pour les graphiques : CA attribué / semaine (8 sem.) + envois par canal. */
 export async function getOverviewSeries() {
   const [sales, runs, logs] = await Promise.all([
