@@ -19,7 +19,7 @@ const NAV = [
   { href: "/sequences", label: "Séquences", icon: Route, soon: true },
   { href: "/campagnes", label: "Campagnes", icon: Rocket, soon: true },
   { href: "/messages", label: "Messages", icon: MessageSquare, soon: true },
-  { href: "/parametres", label: "Connexions", icon: Plug },
+  { href: "/connexions", label: "Connexions", icon: Plug },
 ];
 
 function Brand() {
@@ -103,26 +103,66 @@ function LoginGate({ onAuthed }: { onAuthed: () => void }) {
   );
 }
 
+function SetupGate({ onDone }: { onDone: () => void }) {
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function create() {
+    setErr("");
+    if (pw.length < 8) return setErr("Mot de passe trop court (min 8).");
+    if (pw !== pw2) return setErr("Les mots de passe ne correspondent pas.");
+    setBusy(true);
+    const r = await fetch("/api/auth/setup", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }),
+    });
+    setBusy(false);
+    if (r.ok) onDone();
+    else setErr((await r.json()).error ?? "Erreur");
+  }
+
+  return (
+    <div className="grid min-h-screen place-items-center bg-muted/30 p-6">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="items-center gap-2">
+          <Brand />
+          <CardTitle className="pt-2 text-center text-base font-medium text-muted-foreground">
+            Premier lancement — crée ton mot de passe admin
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Input type="password" placeholder="Mot de passe (min 8)" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <Input type="password" placeholder="Confirmer" value={pw2} onChange={(e) => setPw2(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()} />
+          {err && <p className="text-sm text-destructive">{err}</p>}
+          <Button onClick={create} disabled={busy} className="w-full">{busy ? "…" : "Créer le compte admin"}</Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<{ hasAdmin: boolean; authed: boolean } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/status", { cache: "no-store" })
       .then((r) => r.json())
-      .then((s) => setAuthed(!!s.authed))
-      .catch(() => setAuthed(false));
+      .then((s) => setStatus({ hasAdmin: !!s.hasAdmin, authed: !!s.authed }))
+      .catch(() => setStatus({ hasAdmin: true, authed: false }));
   }, []);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    setAuthed(false);
+    setStatus((s) => (s ? { ...s, authed: false } : s));
   }
 
-  if (authed === null) {
+  if (status === null) {
     return <div className="grid min-h-screen place-items-center text-sm text-muted-foreground">Chargement…</div>;
   }
-  if (!authed) return <LoginGate onAuthed={() => setAuthed(true)} />;
+  if (!status.hasAdmin) return <SetupGate onDone={() => setStatus({ hasAdmin: true, authed: true })} />;
+  if (!status.authed) return <LoginGate onAuthed={() => setStatus((s) => ({ ...(s as { hasAdmin: boolean }), authed: true }))} />;
 
   return (
     <div className="flex min-h-screen bg-muted/20">

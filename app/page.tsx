@@ -1,110 +1,72 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-type Health = { ok: boolean; service: string; timestamp: string };
+import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ArrowRight, MessageCircle, Route, ShieldCheck, Send, LayoutDashboard } from "lucide-react";
 
 export default function Home() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [down, setDown] = useState(false);
-
+  const [live, setLive] = useState<boolean | null>(null);
   useEffect(() => {
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then(setHealth)
-      .catch(() => setDown(true));
+    fetch("/api/health").then((r) => r.json()).then((d) => setLive(!!d.ok)).catch(() => setLive(false));
   }, []);
 
-  const live = Boolean(health?.ok) && !down;
+  const features = [
+    { icon: MessageCircle, title: "Ingestion Chariow", desc: "Ventes & abandons captés en temps réel", on: true },
+    { icon: Route, title: "Séquences", desc: "Relances programmées, arrêt à la conversion", on: true },
+    { icon: ShieldCheck, title: "Anti-spam", desc: "Jamais 2 messages le même jour", on: true },
+    { icon: Send, title: "WhatsApp & email", desc: "Wasender + Brevo", on: true },
+  ];
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center px-6 py-12">
-      <div className="w-full max-w-md flex flex-col gap-8">
-        {/* Marque + statut */}
-        <header className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center font-black text-neutral-950">
-              FB
-            </div>
-            <div className="leading-tight">
-              <div className="text-lg font-bold tracking-tight">FunnelBoss</div>
-              <div className="text-xs text-neutral-400">Bigréussite</div>
-            </div>
+    <main className="min-h-screen bg-background text-foreground">
+      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary font-bold text-primary-foreground">FB</div>
+          <div className="leading-tight">
+            <div className="font-semibold">FunnelBoss</div>
+            <div className="text-xs text-muted-foreground">Bigréussite</div>
           </div>
-          <span
-            className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${
-              live
-                ? "bg-emerald-500/15 text-emerald-400"
-                : down
-                  ? "bg-red-500/15 text-red-400"
-                  : "bg-neutral-700/40 text-neutral-400"
-            }`}
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${
-                live ? "bg-emerald-400 animate-pulse" : down ? "bg-red-400" : "bg-neutral-500"
-              }`}
-            />
-            {live ? "En ligne" : down ? "Hors ligne" : "…"}
-          </span>
-        </header>
+        </div>
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className="gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${live ? "bg-emerald-500" : live === false ? "bg-destructive" : "bg-muted-foreground"}`} />
+            {live ? "En ligne" : live === false ? "Hors ligne" : "…"}
+          </Badge>
+          <Button render={<Link href="/dashboard" />} size="sm">Tableau de bord <ArrowRight className="h-4 w-4" /></Button>
+        </div>
+      </header>
 
-        {/* Hero */}
-        <section className="flex flex-col gap-3">
-          <h1 className="text-3xl font-bold tracking-tight leading-snug">
-            Moteur de relance
-            <br />
-            <span className="bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
-              automatisée
-            </span>
-          </h1>
-          <p className="text-neutral-400 text-sm leading-relaxed">
-            Chaque vente et chaque panier abandonné de la boutique Chariow déclenche
-            automatiquement les bonnes relances WhatsApp &amp; email — au bon moment,
-            sans spammer.
-          </p>
-        </section>
+      <section className="mx-auto max-w-3xl px-6 pt-16 pb-12 text-center">
+        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+          Moteur de relance <span className="text-primary">automatisée</span>
+        </h1>
+        <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
+          Chaque vente et chaque panier abandonné de la boutique Chariow déclenche automatiquement
+          les bonnes relances WhatsApp &amp; email — au bon moment, sans spammer.
+        </p>
+        <div className="mt-7 flex items-center justify-center gap-3">
+          <Button render={<Link href="/dashboard" />} size="lg"><LayoutDashboard className="h-4 w-4" /> Ouvrir le pilotage</Button>
+        </div>
+      </section>
 
-        {/* Pipeline */}
-        <section className="grid gap-3">
-          {[
-            { t: "Ingestion Chariow", d: "Ventes & abandons captés en temps réel", on: true },
-            { t: "Séquences", d: "Relances programmées, arrêt à la conversion", on: true },
-            { t: "Anti-spam", d: "Jamais 2 messages le même jour", on: true },
-            { t: "Envois WhatsApp & email", d: "Wasender + Brevo", on: false },
-            { t: "Tableau de bord", d: "Pilotage & KPI (FCFA)", on: false },
-          ].map((row) => (
-            <div
-              key={row.t}
-              className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/50 px-4 py-3"
-            >
-              <div>
-                <div className="text-sm font-medium">{row.t}</div>
-                <div className="text-xs text-neutral-500">{row.d}</div>
-              </div>
-              <span
-                className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${
-                  row.on
-                    ? "bg-emerald-500/15 text-emerald-400"
-                    : "bg-neutral-700/40 text-neutral-400"
-                }`}
-              >
-                {row.on ? "actif" : "bientôt"}
-              </span>
-            </div>
-          ))}
-        </section>
+      <section className="mx-auto grid max-w-4xl gap-4 px-6 pb-20 sm:grid-cols-2 lg:grid-cols-4">
+        {features.map((f) => (
+          <Card key={f.title}>
+            <CardContent className="flex flex-col gap-2 p-5">
+              <f.icon className="h-5 w-5 text-primary" />
+              <div className="font-medium">{f.title}</div>
+              <div className="text-sm text-muted-foreground">{f.desc}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
 
-        {/* Footer */}
-        <footer className="text-center text-xs text-neutral-600 pt-2">
-          {health?.timestamp ? (
-            <>API {health.service} · {new Date(health.timestamp).toLocaleString("fr-FR")}</>
-          ) : (
-            "Vérification du statut…"
-          )}
-          <div className="mt-1">FCFA · Côte d&apos;Ivoire</div>
-        </footer>
-      </div>
+      <footer className="border-t py-6 text-center text-xs text-muted-foreground">
+        FunnelBoss · FCFA · Côte d'Ivoire
+      </footer>
     </main>
   );
 }
