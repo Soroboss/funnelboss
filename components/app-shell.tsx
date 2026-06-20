@@ -12,12 +12,13 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import { Toaster } from "@/components/ui/sonner";
 
 const NAV = [
   { href: "/dashboard", label: "Vue d'ensemble", icon: LayoutDashboard },
   { href: "/clients", label: "Clients", icon: Users },
-  { href: "/sequences", label: "Séquences", icon: Route, soon: true },
-  { href: "/campagnes", label: "Campagnes", icon: Rocket, soon: true },
+  { href: "/sequences", label: "Séquences", icon: Route },
+  { href: "/campagnes", label: "Campagnes", icon: Rocket },
   { href: "/messages", label: "Messages", icon: MessageSquare, soon: true },
   { href: "/connexions", label: "Connexions", icon: Plug },
 ];
@@ -195,6 +196,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
         <main className="flex-1 p-4 md:p-6">{children}</main>
       </div>
+      <Toaster richColors position="top-center" />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 // Analytics & pilotage (Phase 5). Tout est calculé en JS à partir des lignes
 // (volume boutique modeste). FCFA partout.
 
-import { dbSelect } from "./insforge";
+import { dbSelect, dbInsert, dbPatch } from "./insforge";
 import { enqueueSequence } from "./funnel";
 
 export const VIP_MIN_FCFA = 50000;
@@ -149,7 +149,49 @@ export async function reactivateSegment(segment: Segment): Promise<{ matched: nu
     const created = await enqueueSequence(c.id, seq as never);
     if (created) enqueued++;
   }
+  // Journalise la campagne.
+  await dbInsert("campaigns", [{ segment, matched: matches.length, enqueued }]);
   return { matched: matches.length, enqueued };
+}
+
+// ── Séquences (édition) ──────────────────────────────────────────────
+
+type SequenceFull = { id: string; name: string; trigger: string; steps: unknown; is_active: boolean };
+
+export async function listSequences() {
+  const [seqs, runs] = await Promise.all([
+    dbSelect<SequenceFull>("sequences", "order=created_at.asc&limit=100"),
+    dbSelect<Run>("sequence_runs", "limit=5000"),
+  ]);
+  return seqs.map((s) => {
+    const rs = runs.filter((r) => r.sequence_id === s.id);
+    const converted = rs.filter((r) => r.status === "converted").length;
+    return {
+      ...s,
+      total: rs.length,
+      pending: rs.filter((r) => r.status === "pending").length,
+      converted,
+      tauxConversion: rs.length ? Math.round((converted / rs.length) * 100) : 0,
+    };
+  });
+}
+
+export async function updateSequence(
+  id: string,
+  patch: { is_active?: boolean; steps?: unknown[]; name?: string },
+) {
+  const allowed: Record<string, unknown> = {};
+  if (typeof patch.is_active === "boolean") allowed.is_active = patch.is_active;
+  if (Array.isArray(patch.steps)) allowed.steps = patch.steps;
+  if (typeof patch.name === "string" && patch.name.trim()) allowed.name = patch.name.trim();
+  if (Object.keys(allowed).length === 0) return [];
+  return dbPatch("sequences", `id=eq.${id}`, allowed);
+}
+
+// ── Campagnes ────────────────────────────────────────────────────────
+
+export async function listCampaigns() {
+  return dbSelect("campaigns", "order=created_at.desc&limit=100");
 }
 
 /** Séries pour les graphiques : CA attribué / semaine (8 sem.) + envois par canal. */
